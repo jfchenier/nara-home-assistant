@@ -32,8 +32,9 @@ class NaraActivitySwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def _active_track(self):
-        for track in self.coordinator.raw_data.values():
+        for key, track in self.coordinator.raw_data.items():
             if track.get("type") == self.activity_type and track.get("endDt") is None:
+                track["key"] = key
                 return track
         return None
 
@@ -65,8 +66,9 @@ class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def _active_track(self):
-        for track in self.coordinator.raw_data.values():
+        for key, track in self.coordinator.raw_data.items():
             if track.get("type") == self.activity_type and track.get("endDt") is None:
+                track["key"] = key
                 return track
         return None
 
