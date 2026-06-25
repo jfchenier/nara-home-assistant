@@ -1,0 +1,211 @@
+log_diaper:
+  name: Log Diaper
+  description: Logs a new diaper change to Nara Baby.
+  fields:
+    pee:
+      name: Pee
+      description: True if the diaper was wet.
+      example: true
+      default: true
+      selector:
+        boolean:
+    poop:
+      name: Poop
+      description: True if the diaper was soiled.
+      example: false
+      default: false
+      selector:
+        boolean:
+    dry:
+      name: Dry
+      description: True if the diaper was completely dry.
+      example: false
+      default: false
+      selector:
+        boolean:
+    rash:
+      name: Rash
+      description: True if there is a diaper rash.
+      example: false
+      default: false
+      selector:
+        boolean:
+    blowout:
+      name: Blowout
+      description: True if there was a poop blowout.
+      example: false
+      default: false
+      selector:
+        boolean:
+    color:
+      name: Color
+      description: The color of the poop.
+      example: "YELLOW"
+      selector:
+        select:
+          options: ["BLACK", "BROWN", "GRAY", "GREEN", "RED", "YELLOW"]
+    texture:
+      name: Texture
+      description: The texture of the poop.
+      example: "SEEDY"
+      selector:
+        select:
+          options: ["MUCOUS", "MUSH", "PEBBLE", "RUN", "SOLID"]
+    note:
+      name: Note
+      description: An optional text note.
+      example: "Morning diaper change."
+      selector:
+        text:
+
+log_sleep:
+  name: Log Sleep
+  description: Logs a complete sleep session.
+  fields:
+    begin_dt:
+      name: Begin Time (Timestamp)
+      description: Start time in milliseconds (Epoch).
+      example: 1684323456789
+      required: true
+      selector:
+        text:
+    end_dt:
+      name: End Time (Timestamp)
+      description: End time in milliseconds (Epoch).
+      example: 1684333456789
+      required: true
+      selector:
+        text:
+    note:
+      name: Note
+      description: An optional text note.
+      example: "Good nap!"
+      selector:
+        text:
+
+log_bottle_feed:
+  name: Log Bottle Feed
+  description: Logs a bottle feeding.
+  fields:
+    breast_milk:
+      name: Breast Milk
+      description: True if breast milk, False if formula.
+      default: true
+      selector:
+        boolean:
+    volume_floz:
+      name: Volume (oz)
+      description: Volume consumed in fluid ounces.
+      example: 4.5
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 20
+          step: 0.1
+    formula_name:
+      name: Formula Name
+      description: Name of the formula if applicable.
+      example: "Similac"
+      selector:
+        text:
+    note:
+      name: Note
+      description: An optional text note.
+      selector:
+        text:
+
+log_breast_feed:
+  name: Log Breast Feed
+  description: Logs a manual breast feeding session.
+  fields:
+    side:
+      name: Side
+      description: The side nursed on.
+      default: "LEFT"
+      selector:
+        select:
+          options: ["LEFT", "RIGHT", "BOTH"]
+    duration_minutes:
+      name: Duration (Minutes)
+      description: The duration of the feed in minutes.
+      example: 15
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 0.5
+    note:
+      name: Note
+      description: An optional text note.
+      selector:
+        text:
+
+log_solid_feed:
+  name: Log Solid Feed
+  description: Logs a solid food feeding session.
+  fields:
+    note:
+      name: Note
+      description: Notes about what the baby ate.
+      selector:
+        text:
+
+log_growth:
+  name: Log Growth
+  description: Logs a growth measurement.
+  fields:
+    weight_lb:
+      name: Weight (lb)
+      description: Weight in pounds.
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+    height_in:
+      name: Height (in)
+      description: Height in inches.
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 0.25
+    head_in:
+      name: Head Circumference (in)
+      description: Head circumference in inches.
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 0.25
+
+log_health:
+  name: Log Health
+  description: Logs a health measurement (temperature or medicine).
+  fields:
+    medicine_name:
+      name: Medicine Name
+      description: The name of the medicine given.
+      selector:
+        text:
+    temp_f:
+      name: Temperature (F)
+      description: Temperature in Fahrenheit.
+      selector:
+        number:
+          min: 90
+          max: 110
+          step: 0.1
+
+log_milestone:
+  name: Log Milestone
+  description: Logs a milestone.
+  fields:
+    milestone_name:
+      name: Milestone Name
+      description: The name of the milestone achieved.
+      required: true
+      selector:
+        text:

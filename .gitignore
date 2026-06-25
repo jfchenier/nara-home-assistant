@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.env
+.venv/
+venv/
+ENV/
+env/
+
+# IDEs and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Old local test folders
+config/
+nara-baby-tracker-api/
