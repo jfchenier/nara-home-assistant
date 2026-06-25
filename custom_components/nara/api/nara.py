@@ -153,12 +153,20 @@ class NaraAPI:
                                         track["key"] = key
                                         callback(track)
                         elif path_val.startswith("/"):
-                            # A specific track was updated. e.g. path="/-OvkXYZ"
-                            # The key is the path without the leading slash.
-                            if isinstance(data_val, dict):
-                                track_id = path_val[1:]
-                                data_val["key"] = track_id
-                                callback(data_val)
+                            # Path could be "/-OvkXYZ" or deeper like "/-OvkXYZ/breastLeftBeginDt"
+                            parts = path_val.strip("/").split("/")
+                            track_id = parts[0]
+                            
+                            if len(parts) == 1:
+                                # Full track update or partial patch at track root
+                                if isinstance(data_val, dict):
+                                    data_val["key"] = track_id
+                                    callback(data_val)
+                            elif len(parts) == 2:
+                                # Deep update for a specific field, e.g. "/-OvkXYZ/endDt"
+                                field_name = parts[1]
+                                payload_dict = {field_name: data_val, "key": track_id}
+                                callback(payload_dict)
                                 
                 except json.JSONDecodeError:
                     pass

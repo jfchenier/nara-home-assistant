@@ -82,9 +82,14 @@ class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
         for key, track in self.coordinator.raw_data.items():
             if track.get("type") == self.activity_type and track.get("endDt") is None:
                 # If it's a ghost track (both sides paused, but no endDt), ignore it!
-                if self.activity_type in ["FEED", "PUMP"]:
+                if self.activity_type == "FEED":
                     left = track.get("breastLeftBeginDt")
                     right = track.get("breastRightBeginDt")
+                    if not left and not right:
+                        continue
+                elif self.activity_type == "PUMP":
+                    left = track.get("pumpLeftBeginDt")
+                    right = track.get("pumpRightBeginDt")
                     if not left and not right:
                         continue
                 track["key"] = key

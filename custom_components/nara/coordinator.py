@@ -20,6 +20,29 @@ class NaraDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=None, # Update is handled via SSE push
         )
 
+    async def _handle_stream_event(self, track_data):
+        """Handle incoming real-time update from Firebase."""
+        if not track_data:
+            return
+            
+        track_id = track_data.get("key")
+        if not track_id:
+            return
+            
+        _LOGGER.debug(f"Received real-time update for track {track_id}")
+        
+        # Merge partial updates into existing track
+        if track_id in self.raw_data:
+            self.raw_data[track_id].update(track_data)
+        else:
+            if "type" not in track_data:
+                # We can't use an unknown orphan partial track
+                return
+            self.raw_data[track_id] = track_data
+            
+        # Trigger an update to all entities
+        self.hass.add_job(self.async_set_updated_data, self.raw_data)
+
     async def _async_update_data(self):
         """Fetch data from Nara API."""
         try:
