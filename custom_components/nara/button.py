@@ -44,8 +44,13 @@ class NaraFinishButton(CoordinatorEntity, ButtonEntity):
         track = self._active_track
         if not track:
             return
-
+            
+        now = int(time.time() * 1000)
         if self.activity_type == "FEED":
             await self.hass.async_add_executor_job(self.coordinator.api.stop_breast_feed, track["key"])
         elif self.activity_type == "PUMP":
             await self.hass.async_add_executor_job(self.coordinator.api.stop_pump, track["key"], 0, 0)
+            
+        # Optimistic update
+        track["endDt"] = now
+        self.async_write_ha_state()

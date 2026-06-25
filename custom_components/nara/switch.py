@@ -44,12 +44,24 @@ class NaraActivitySwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         if self.activity_type == "SLEEP":
-            await self.hass.async_add_executor_job(self.coordinator.api.start_sleep)
+            now = int(time.time() * 1000)
+            track_id = await self.hass.async_add_executor_job(self.coordinator.api.start_sleep)
+            # Optimistic update
+            self.coordinator.raw_data[track_id] = {
+                "type": "SLEEP",
+                "beginDt": now,
+                "key": track_id
+            }
+            self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
         track = self._active_track
         if track and self.activity_type == "SLEEP":
+            now = int(time.time() * 1000)
             await self.hass.async_add_executor_job(self.coordinator.api.stop_sleep, track["key"])
+            # Optimistic update
+            track["endDt"] = now
+            self.async_write_ha_state()
 
 
 class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
@@ -86,22 +98,70 @@ class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         track = self._active_track
+        now = int(time.time() * 1000)
+        
         if track:
             if self.activity_type == "FEED":
                 await self.hass.async_add_executor_job(self.coordinator.api.resume_breast_feed, track["key"], self.side)
+                # Optimistic update
+                if self.side == "LEFT":
+                    track["breastLeftBeginDt"] = now
+                else:
+                    track["breastRightBeginDt"] = now
             elif self.activity_type == "PUMP":
                 await self.hass.async_add_executor_job(self.coordinator.api.resume_pump, track["key"], self.side)
+                # Optimistic update
+                if self.side == "LEFT":
+                    track["pumpLeftBeginDt"] = now
+                else:
+                    track["pumpRightBeginDt"] = now
         else:
             # Start new track
             if self.activity_type == "FEED":
-                await self.hass.async_add_executor_job(self.coordinator.api.start_breast_feed, self.side)
+                track_id = await self.hass.async_add_executor_job(self.coordinator.api.start_breast_feed, self.side)
+                # Optimistic update
+                self.coordinator.raw_data[track_id] = {
+                    "type": "FEED",
+                    "feedType": "BREAST",
+                    "breastBeginSide": self.side,
+                    "breastEndSide": self.side,
+                    "breastLeftBeginDt": now if self.side == "LEFT" else None,
+                    "breastRightBeginDt": now if self.side == "RIGHT" else None,
+                    "key": track_id
+                }
             elif self.activity_type == "PUMP":
-                await self.hass.async_add_executor_job(self.coordinator.api.start_pump, self.side)
+                track_id = await self.hass.async_add_executor_job(self.coordinator.api.start_pump, self.side)
+                # Optimistic update
+                self.coordinator.raw_data[track_id] = {
+                    "type": "PUMP",
+                    "pumpBeginSide": self.side,
+                    "pumpEndSide": self.side,
+                    "pumpLeftBeginDt": now if self.side == "LEFT" else None,
+                    "pumpRightBeginDt": now if self.side == "RIGHT" else None,
+                    "key": track_id
+                }
+                
+        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
         track = self._active_track
-        if track:
-            if self.activity_type == "FEED":
-                await self.hass.async_add_executor_job(self.coordinator.api.pause_breast_feed, track["key"])
-            elif self.activity_type == "PUMP":
-                await self.hass.async_add_executor_job(self.coordinator.api.pause_pump, track["key"])
+        if not track:
+            return
+            
+        if self.activity_type == "FEED":
+            await self.hass.async_add_executor_job(self.coordinator.api.pause_breast_feed, track["key"])
+            # Optimistic update
+            if self.side == "LEFT":
+                track["breastLeftBeginDt"] = None
+            else:
+                track["breastRightBeginDt"] = None
+        elif self.activity_type == "PUMP":
+            await self.hass.async_add_executor_job(self.coordinator.api.pause_pump, track["key"])
+            # Optimistic update
+            if self.side == "LEFT":
+                track["pumpLeftBeginDt"] = None
+            else:
+                track["pumpRightBeginDt"] = None
+                
+        self.async_write_ha_state()
+
