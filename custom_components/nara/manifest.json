@@ -7,6 +7,6 @@
   "documentation": "https://github.com/jfchenier/nara-home-assistant",
   "integration_type": "hub",
   "iot_class": "cloud_push",
-  "requirements": ["requests==2.32.3"],
+  "requirements": [],
   "version": "1.0.0"
 }
