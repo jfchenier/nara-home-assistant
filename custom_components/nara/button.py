@@ -1,4 +1,5 @@
 import logging
+import time
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
