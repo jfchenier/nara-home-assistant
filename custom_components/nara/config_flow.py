@@ -12,11 +12,7 @@ from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD
 
 _LOGGER = logging.getLogger(__name__)
 
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../nara-baby-tracker-api'))
-
-from nara import NaraAPI
+from .api.nara import NaraAPI
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
