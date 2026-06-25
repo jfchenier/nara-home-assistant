@@ -94,7 +94,7 @@ class NaraAPI:
         res = self._do_request("POST", self.CF_URL, json=payload, headers={"Authorization": f"Bearer {self.id_token}"})
         
         data = res.json()
-        tracks = data.get("result", {}).get("data", {}).get("trackz", {})
+        tracks = data.get("result", {}).get("trackz", {})
         return tracks
 
     def stream_activities(self, callback):
