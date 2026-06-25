@@ -32,6 +32,12 @@ class NaraFinishButton(CoordinatorEntity, ButtonEntity):
     def _active_track(self):
         for key, track in self.coordinator.raw_data.items():
             if track.get("type") == self.activity_type and track.get("endDt") is None:
+                # If it's a ghost track (both sides paused, but no endDt), ignore it!
+                if self.activity_type in ["FEED", "PUMP"]:
+                    left = track.get("breastLeftBeginDt")
+                    right = track.get("breastRightBeginDt")
+                    if not left and not right:
+                        continue
                 track["key"] = key
                 return track
         return None

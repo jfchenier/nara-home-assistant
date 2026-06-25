@@ -81,6 +81,12 @@ class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
     def _active_track(self):
         for key, track in self.coordinator.raw_data.items():
             if track.get("type") == self.activity_type and track.get("endDt") is None:
+                # If it's a ghost track (both sides paused, but no endDt), ignore it!
+                if self.activity_type in ["FEED", "PUMP"]:
+                    left = track.get("breastLeftBeginDt")
+                    right = track.get("breastRightBeginDt")
+                    if not left and not right:
+                        continue
                 track["key"] = key
                 return track
         return None
@@ -150,14 +156,14 @@ class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
             return
             
         if self.activity_type == "FEED":
-            await self.hass.async_add_executor_job(self.coordinator.api.pause_breast_feed, track["key"])
+            await self.hass.async_add_executor_job(self.coordinator.api.pause_breast_feed, track["key"], self.side)
             # Optimistic update
             if self.side == "LEFT":
                 track["breastLeftBeginDt"] = None
             else:
                 track["breastRightBeginDt"] = None
         elif self.activity_type == "PUMP":
-            await self.hass.async_add_executor_job(self.coordinator.api.pause_pump, track["key"])
+            await self.hass.async_add_executor_job(self.coordinator.api.pause_pump, track["key"], self.side)
             # Optimistic update
             if self.side == "LEFT":
                 track["pumpLeftBeginDt"] = None

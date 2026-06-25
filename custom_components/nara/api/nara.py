@@ -335,9 +335,10 @@ class NaraAPI:
         }
         return self.log_activity("FEED", begin_dt=now, **payload)
 
-    def pause_breast_feed(self, track_id):
+    def pause_breast_feed(self, track_id, side=None):
         """
-        Pauses an active breast feed timer, saving the elapsed time.
+        Pauses an active breast feed timer for a specific side.
+        If no sides remain active after pausing, the feed is finalized (stopped).
         """
         track = self.get_track(track_id)
         if not track:
@@ -346,15 +347,24 @@ class NaraAPI:
         now = int(time.time() * 1000)
         updates = {"updateDt": now}
         
-        if track.get("breastLeftBeginDt"):
+        left_active = track.get("breastLeftBeginDt") is not None
+        right_active = track.get("breastRightBeginDt") is not None
+        
+        if (side == "LEFT" or side is None) and left_active:
             elapsed = now - track["breastLeftBeginDt"]
             updates["breastLeftDuration"] = track.get("breastLeftDuration", 0) + elapsed
             updates["breastLeftBeginDt"] = None
+            left_active = False
             
-        if track.get("breastRightBeginDt"):
+        if (side == "RIGHT" or side is None) and right_active:
             elapsed = now - track["breastRightBeginDt"]
             updates["breastRightDuration"] = track.get("breastRightDuration", 0) + elapsed
             updates["breastRightBeginDt"] = None
+            right_active = False
+            
+        # If neither side is active anymore, finalize the feed entirely!
+        if not left_active and not right_active:
+            updates["endDt"] = now
             
         self.patch_activity(track_id, updates)
         return True
@@ -370,6 +380,10 @@ class NaraAPI:
         now = int(time.time() * 1000)
         updates = {"updateDt": now}
         
+        # If we are resuming a finalized track, we must remove endDt!
+        if track.get("endDt"):
+            updates["endDt"] = None
+            
         # Determine the current active side if we are already running
         running_side = None
         if track.get("breastLeftBeginDt"):
@@ -465,26 +479,36 @@ class NaraAPI:
         }
         return self.log_activity("PUMP", begin_dt=now, **payload)
 
-    def pause_pump(self, track_id):
+    def pause_pump(self, track_id, side=None):
         """
-        Pauses an active pump timer.
+        Pauses an active pump timer for a specific side.
+        If no sides remain active after pausing, the feed is finalized (stopped).
         """
         track = self.get_track(track_id)
         if not track:
             return False
             
         now = int(time.time() * 1000)
-        updates = {"updateDt": now, "endDt": now}
+        updates = {"updateDt": now}
         
-        if track.get("breastLeftBeginDt"):
-            elapsed = now - track["breastLeftBeginDt"]
-            updates["breastLeftDuration"] = track.get("breastLeftDuration", 0) + elapsed
-            updates["breastLeftBeginDt"] = None
+        left_active = track.get("pumpLeftBeginDt") is not None
+        right_active = track.get("pumpRightBeginDt") is not None
+        
+        if (side == "LEFT" or side is None) and left_active:
+            elapsed = now - track["pumpLeftBeginDt"]
+            updates["pumpLeftDuration"] = track.get("pumpLeftDuration", 0) + elapsed
+            updates["pumpLeftBeginDt"] = None
+            left_active = False
             
-        if track.get("breastRightBeginDt"):
-            elapsed = now - track["breastRightBeginDt"]
-            updates["breastRightDuration"] = track.get("breastRightDuration", 0) + elapsed
-            updates["breastRightBeginDt"] = None
+        if (side == "RIGHT" or side is None) and right_active:
+            elapsed = now - track["pumpRightBeginDt"]
+            updates["pumpRightDuration"] = track.get("pumpRightDuration", 0) + elapsed
+            updates["pumpRightBeginDt"] = None
+            right_active = False
+            
+        # If neither side is active anymore, finalize the feed entirely!
+        if not left_active and not right_active:
+            updates["endDt"] = now
             
         self.patch_activity(track_id, updates)
         return True
@@ -498,22 +522,35 @@ class NaraAPI:
             return False
             
         now = int(time.time() * 1000)
-        updates = {"updateDt": now, "endDt": now}
+        updates = {"updateDt": now}
         
+        # If we are resuming a finalized track, we must remove endDt!
+        if track.get("endDt"):
+            updates["endDt"] = None
+            
+        # Determine the current active side if we are already running
         running_side = None
-        if track.get("breastLeftBeginDt"):
+        if track.get("pumpLeftBeginDt"):
             running_side = "LEFT"
-        elif track.get("breastRightBeginDt"):
+        elif track.get("pumpRightBeginDt"):
             running_side = "RIGHT"
             
-        target_side = side.upper() if side else (running_side or "LEFT")
+        if running_side and running_side != side:
+            # They want to switch sides! 
+            if running_side == "LEFT":
+                elapsed = now - track["pumpLeftBeginDt"]
+                updates["pumpLeftDuration"] = track.get("pumpLeftDuration", 0) + elapsed
+                updates["pumpLeftBeginDt"] = None
+            else:
+                elapsed = now - track["pumpRightBeginDt"]
+                updates["pumpRightDuration"] = track.get("pumpRightDuration", 0) + elapsed
+                updates["pumpRightBeginDt"] = None
         
-        if running_side and running_side != target_side:
-            elapsed = now - track[f"breast{running_side.capitalize()}BeginDt"]
-            updates[f"breast{running_side.capitalize()}Duration"] = track.get(f"breast{running_side.capitalize()}Duration", 0) + elapsed
-            updates[f"breast{running_side.capitalize()}BeginDt"] = None
+        if side == "LEFT":
+            updates["pumpLeftBeginDt"] = now
+        elif side == "RIGHT":
+            updates["pumpRightBeginDt"] = now
             
-        updates[f"breast{target_side.capitalize()}BeginDt"] = now
         self.patch_activity(track_id, updates)
         return True
 
