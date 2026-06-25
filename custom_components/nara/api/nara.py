@@ -162,6 +162,9 @@ class NaraAPI:
                                 if isinstance(data_val, dict):
                                     data_val["key"] = track_id
                                     callback(data_val)
+                                elif data_val is None:
+                                    # Track was deleted!
+                                    callback({"key": track_id, "_deleted": True})
                             elif len(parts) == 2:
                                 # Deep update for a specific field, e.g. "/-OvkXYZ/endDt"
                                 field_name = parts[1]

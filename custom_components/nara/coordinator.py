@@ -32,7 +32,10 @@ class NaraDataUpdateCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(f"Received real-time update for track {track_id}")
         
         # Merge partial updates into existing track
-        if track_id in self.raw_data:
+        if track_data.get("_deleted"):
+            if track_id in self.raw_data:
+                del self.raw_data[track_id]
+        elif track_id in self.raw_data:
             self.raw_data[track_id].update(track_data)
         else:
             if "type" not in track_data:
