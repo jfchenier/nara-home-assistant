@@ -231,6 +231,8 @@ class NaraAPI:
         then pushes the full updated track to the instreamz sync queue.
         """
         path_trackz = f"/familyz/{self.family_key}/trackz/{track_id}.json"
+        
+        # We MUST send None values to PATCH so Firebase deletes those fields
         self._do_request("PATCH", f"{self.DB_URL}{path_trackz}?auth={self.id_token}", json=updates)
         
         # We need to write to instreamz to trigger the cloud functions too.
@@ -238,9 +240,13 @@ class NaraAPI:
         # Fetch the complete updated track and push to instreamz
         full_track = self.get_track(track_id)
         if full_track:
+            # We don't want None fields in the fetched track, but Firebase already removes them.
+            # Just to be extremely safe, we strip them.
+            clean_track = {k: v for k, v in full_track.items() if v is not None}
+            
             sync_group = self._generate_id()
             path_instreamz = f"/instreamz/familyz/{self.family_key}/trackz/{self.uid}/{sync_group}/value/{track_id}.json"
-            self._do_request("PUT", f"{self.DB_URL}{path_instreamz}?auth={self.id_token}", json=full_track)
+            self._do_request("PUT", f"{self.DB_URL}{path_instreamz}?auth={self.id_token}", json=clean_track)
             
         return track_id
 
@@ -264,10 +270,10 @@ class NaraAPI:
         payload = {
             "type": track_type,
             "beginDt": begin_dt,
-            "userKey": self.uid,
-            "createUserKey": self.uid,
             "ord": -begin_dt,
-            "tz": "US/Eastern",
+            "tz": self._get_local_timezone(),
+            "createUserKey": self.uid,
+            "userKey": self.uid,
             "updateDt": int(time.time() * 1000)
         }
         if end_dt:
@@ -341,9 +347,12 @@ class NaraAPI:
             "breastEndSide": side,
             "breastLeftDuration": 0,
             "breastRightDuration": 0,
-            "breastLeftBeginDt": now if side == "LEFT" else None,
-            "breastRightBeginDt": now if side == "RIGHT" else None,
         }
+        if side == "LEFT":
+            payload["breastLeftBeginDt"] = now
+        elif side == "RIGHT":
+            payload["breastRightBeginDt"] = now
+            
         return self.log_activity("FEED", begin_dt=now, **payload)
 
     def pause_breast_feed(self, track_id, side=None):
@@ -485,9 +494,12 @@ class NaraAPI:
             "endDt": now,
             "breastLeftDuration": 0,
             "breastRightDuration": 0,
-            "breastLeftBeginDt": now if side == "LEFT" else None,
-            "breastRightBeginDt": now if side == "RIGHT" else None,
         }
+        if side == "LEFT":
+            payload["breastLeftBeginDt"] = now
+        elif side == "RIGHT":
+            payload["breastRightBeginDt"] = now
+            
         return self.log_activity("PUMP", begin_dt=now, **payload)
 
     def pause_pump(self, track_id, side=None):
