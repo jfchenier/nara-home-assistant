@@ -108,14 +108,14 @@ class NaraAPI:
         # We use orderBy="updateDt" & startAt=<now> so we only receive new events
         # from the moment the stream connects, bypassing the entire historical dataset.
         now_ms = int(time.time() * 1000)
-        url = f"{self.DB_URL}/familyz/{self.family_key}/trackz.json?auth={self.id_token}&orderBy=\"updateDt\"&startAt={now_ms}"
+        url = f"{self.DB_URL}/familyz/{self.family_key}/trackz.json?auth={self.id_token}"
         headers = {'Accept': 'text/event-stream'}
         
         res = requests.get(url, headers=headers, stream=True)
         if res.status_code == 401:
             print("SSE Stream got 401, re-authenticating...")
             self.login()
-            url = f"{self.DB_URL}/familyz/{self.family_key}/trackz.json?auth={self.id_token}&orderBy=\"updateDt\"&startAt={now_ms}"
+            url = f"{self.DB_URL}/familyz/{self.family_key}/trackz.json?auth={self.id_token}"
             res = requests.get(url, headers=headers, stream=True)
             
         if res.status_code != 200:
@@ -145,43 +145,37 @@ class NaraAPI:
                         if data_val is None and path_val == "/":
                             continue
                             
-                        # If it's the initial payload, the path is "/" and data is a dict of the matched items.
+                        # If it's the initial payload, the path is "/" and data is a dict of user keys -> tracks.
                         if path_val == "/":
                             if isinstance(data_val, dict):
-                                deep_updates = {}
-                                for key, track in data_val.items():
-                                    if isinstance(track, dict):
-                                        track["key"] = key
-                                        callback(track)
-                                    elif "/" in key:
-                                        parts = key.split("/")
-                                        if len(parts) == 2:
-                                            t_id, f_name = parts[0], parts[1]
-                                            if t_id not in deep_updates:
-                                                deep_updates[t_id] = {"key": t_id}
-                                            deep_updates[t_id][f_name] = track
-                                for t_id, update in deep_updates.items():
-                                    callback(update)
+                                for user_key, tracks in data_val.items():
+                                    if isinstance(tracks, dict):
+                                        for track_id, track in tracks.items():
+                                            if isinstance(track, dict):
+                                                track["key"] = track_id
+                                                callback(track)
                         elif path_val.startswith("/"):
-                            # Path could be "/-OvkXYZ" or deeper like "/-OvkXYZ/breastLeftBeginDt"
+                            # Path is like "/<userKey>/<trackKey>" or deeper "/<userKey>/<trackKey>/breastLeftBeginDt"
                             parts = path_val.strip("/").split("/")
-                            track_id = parts[0]
                             
-                            if len(parts) == 1:
-                                # Full track update or partial patch at track root
-                                if isinstance(data_val, dict):
-                                    data_val["key"] = track_id
-                                    if current_event == "put":
-                                        data_val["_replace"] = True
-                                    callback(data_val)
-                                elif data_val is None:
-                                    # Track was deleted!
-                                    callback({"key": track_id, "_deleted": True})
-                            elif len(parts) == 2:
-                                # Deep update for a specific field, e.g. "/-OvkXYZ/endDt"
-                                field_name = parts[1]
-                                payload_dict = {field_name: data_val, "key": track_id}
-                                callback(payload_dict)
+                            if len(parts) >= 2:
+                                user_key = parts[0]
+                                track_id = parts[1]
+                                
+                                if len(parts) == 2:
+                                    # Full track update or partial patch at track root
+                                    if isinstance(data_val, dict):
+                                        data_val["key"] = track_id
+                                        if current_event == "put":
+                                            data_val["_replace"] = True
+                                        callback(data_val)
+                                    elif data_val is None:
+                                        # Track was deleted!
+                                        callback({"key": track_id, "_deleted": True})
+                                elif len(parts) == 3:
+                                    # Deep patch (e.g., {"breastLeftBeginDt": 12345})
+                                    field_name = parts[2]
+                                    callback({"key": track_id, field_name: data_val})
                                 
                 except json.JSONDecodeError:
                     pass

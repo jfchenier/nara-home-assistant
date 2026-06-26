@@ -12,7 +12,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [
         NaraFinishButton(coordinator, "FEED", "mdi:check-circle-outline"),
-        NaraFinishButton(coordinator, "PUMP", "mdi:check-circle-outline"),
     ]
     async_add_entities(entities)
 
@@ -38,11 +37,6 @@ class NaraFinishButton(CoordinatorEntity, ButtonEntity):
                     right = track.get("breastRightBeginDt")
                     if not left and not right:
                         continue
-                elif self.activity_type == "PUMP":
-                    left = track.get("pumpLeftBeginDt")
-                    right = track.get("pumpRightBeginDt")
-                    if not left and not right:
-                        continue
                 track["key"] = key
                 return track
         return None
@@ -60,8 +54,6 @@ class NaraFinishButton(CoordinatorEntity, ButtonEntity):
         now = int(time.time() * 1000)
         if self.activity_type == "FEED":
             await self.hass.async_add_executor_job(self.coordinator.api.stop_breast_feed, track["key"])
-        elif self.activity_type == "PUMP":
-            await self.hass.async_add_executor_job(self.coordinator.api.stop_pump, track["key"], 0, 0)
             
         # Optimistic update
         track["endDt"] = now

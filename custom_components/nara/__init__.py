@@ -66,18 +66,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Setup the debouncer for SSE events
-    async def _refresh():
-        _LOGGER.debug("Refreshing Nara data via SSE push...")
-        await coordinator.async_request_refresh()
-
-    debouncer = Debouncer(hass, DEBOUNCE_TIME, _refresh)
-
     def _on_sse_event(activity):
         _LOGGER.debug("Received SSE event: %s", activity)
-        if "key" in activity:
-            coordinator.raw_data[activity["key"]] = activity
-        hass.loop.call_soon_threadsafe(debouncer.trigger)
+        hass.loop.call_soon_threadsafe(
+            lambda: hass.async_create_task(coordinator._handle_stream_event(activity))
+        )
 
     # Start SSE thread
     sse_thread = SSEListener(api, _on_sse_event)
