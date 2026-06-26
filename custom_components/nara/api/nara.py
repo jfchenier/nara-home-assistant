@@ -142,7 +142,7 @@ class NaraAPI:
                         data_val = payload.get("data")
                         path_val = payload.get("path")
                         
-                        if data_val is None:
+                        if data_val is None and path_val == "/":
                             continue
                             
                         # If it's the initial payload, the path is "/" and data is a dict of the matched items.
@@ -355,7 +355,6 @@ class NaraAPI:
             "breastEndSide": side,
             "breastLeftDuration": 0,
             "breastRightDuration": 0,
-            "isTimer": True
         }
         if side == "LEFT":
             payload["breastLeftBeginDt"] = now
@@ -474,8 +473,7 @@ class NaraAPI:
         now = int(time.time() * 1000)
         payload = {
             "type": "SLEEP",
-            "endDt": None,
-            "isTimer": True
+            "endDt": None
         }
         return self.log_activity("SLEEP", begin_dt=now, **payload)
 
@@ -499,17 +497,13 @@ class NaraAPI:
         side = side.upper()
         now = int(time.time() * 1000)
         payload = {
-            "type": "PUMP",
-            "breastBoth": False,
-            "endDt": now,
-            "breastLeftDuration": 0,
-            "breastRightDuration": 0,
-            "isTimer": True
+            "pumpLeftDuration": 0,
+            "pumpRightDuration": 0,
         }
         if side == "LEFT":
-            payload["breastLeftBeginDt"] = now
+            payload["pumpLeftBeginDt"] = now
         elif side == "RIGHT":
-            payload["breastRightBeginDt"] = now
+            payload["pumpRightBeginDt"] = now
             
         return self.log_activity("PUMP", begin_dt=now, **payload)
 
