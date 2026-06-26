@@ -35,7 +35,7 @@ class NaraActivitySwitch(CoordinatorEntity, SwitchEntity):
     @property
     def _active_track(self):
         for key, track in self.coordinator.raw_data.items():
-            if track.get("type") == self.activity_type and track.get("endDt") is None:
+            if track.get("type") == self.activity_type and track.get("isTimer") and track.get("endDt") is None:
                 track["key"] = key
                 return track
         return None
@@ -52,6 +52,7 @@ class NaraActivitySwitch(CoordinatorEntity, SwitchEntity):
             self.coordinator.raw_data[track_id] = {
                 "type": "SLEEP",
                 "beginDt": now,
+                "isTimer": True,
                 "key": track_id
             }
             self.async_write_ha_state()
@@ -81,7 +82,7 @@ class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def _active_track(self):
         for key, track in self.coordinator.raw_data.items():
-            if track.get("type") == self.activity_type and track.get("endDt") is None:
+            if track.get("type") == self.activity_type and track.get("isTimer") and track.get("endDt") is None:
                 # If it's a ghost track (both sides paused, but no endDt), ignore it!
                 if self.activity_type == "FEED":
                     left = track.get("breastLeftBeginDt")
@@ -129,6 +130,7 @@ class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
                     "breastEndSide": self.side,
                     "breastLeftBeginDt": now if self.side == "LEFT" else None,
                     "breastRightBeginDt": now if self.side == "RIGHT" else None,
+                    "isTimer": True,
                     "key": track_id
                 }
                 
@@ -163,7 +165,7 @@ class NaraPumpSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def _active_track(self):
         for key, track in self.coordinator.raw_data.items():
-            if track.get("type") == "PUMP" and not track.get("endDt"):
+            if track.get("type") == "PUMP" and track.get("isTimer") and not track.get("endDt"):
                 # A running pump track has no endDt
                 if track.get("breastLeftBeginDt") or track.get("breastRightBeginDt"):
                     track["key"] = key
@@ -193,6 +195,7 @@ class NaraPumpSwitch(CoordinatorEntity, SwitchEntity):
                 "breastRightBeginDt": now,
                 "breastLeftDuration": 0,
                 "breastRightDuration": 0,
+                "isTimer": True,
                 "key": track_id
             }
                 

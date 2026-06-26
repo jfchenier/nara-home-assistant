@@ -471,7 +471,8 @@ class NaraAPI:
         now = int(time.time() * 1000)
         payload = {
             "type": "SLEEP",
-            "endDt": None
+            "endDt": None,
+            "isTimer": True
         }
         return self.log_activity("SLEEP", begin_dt=now, **payload)
 

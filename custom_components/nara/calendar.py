@@ -52,7 +52,9 @@ class NaraCalendarEntity(CoordinatorEntity, CalendarEntity):
 
         for key, track in raw_data.items():
             begin = track.get("beginDt", 0)
-            end = track.get("endDt", begin)
+            end = track.get("endDt")
+            if end is None:
+                end = begin
             
             # Point in time events (diapers, etc.) might have begin == end
             if begin > end_ms or end < start_ms:
