@@ -501,30 +501,22 @@ class NaraAPI:
         }
         self.patch_activity(track_id, updates)
         return True
-
-    def start_pump(self, side="LEFT"):
+    def start_pump(self):
         """
         Starts an active, real-time pump timer.
         Returns the track_id.
         """
-        side = side.upper()
         now = int(time.time() * 1000)
         payload = {
-            "pumpLeftDuration": 0,
-            "pumpRightDuration": 0,
-            "isTimer": True
+            "breastLeftDuration": 0,
+            "breastBoth": False,
+            "breastLeftBeginDt": now
         }
-        if side == "LEFT":
-            payload["pumpLeftBeginDt"] = now
-        elif side == "RIGHT":
-            payload["pumpRightBeginDt"] = now
-            
-        return self.log_activity("PUMP", begin_dt=now, **payload)
+        return self.log_activity("PUMP", begin_dt=now, end_dt=now, **payload)
 
-    def pause_pump(self, track_id, side=None):
+    def pause_pump(self, track_id):
         """
-        Pauses an active pump timer for a specific side.
-        If no sides remain active after pausing, the feed is finalized (stopped).
+        Pauses an active pump timer.
         """
         track = self.get_track(track_id)
         if not track:
@@ -533,66 +525,30 @@ class NaraAPI:
         now = int(time.time() * 1000)
         updates = {"updateDt": now}
         
-        left_active = track.get("pumpLeftBeginDt") is not None
-        right_active = track.get("pumpRightBeginDt") is not None
+        active = track.get("breastLeftBeginDt") is not None
         
-        if (side == "LEFT" or side is None) and left_active:
-            elapsed = now - track["pumpLeftBeginDt"]
-            updates["pumpLeftDuration"] = track.get("pumpLeftDuration", 0) + elapsed
-            updates["pumpLeftBeginDt"] = None
-            left_active = False
-            
-        if (side == "RIGHT" or side is None) and right_active:
-            elapsed = now - track["pumpRightBeginDt"]
-            updates["pumpRightDuration"] = track.get("pumpRightDuration", 0) + elapsed
-            updates["pumpRightBeginDt"] = None
-            right_active = False
-            
-        # If neither side is active anymore, finalize the feed entirely!
-        if not left_active and not right_active:
-            updates["endDt"] = now
+        if active:
+            elapsed = now - track["breastLeftBeginDt"]
+            updates["breastLeftDuration"] = track.get("breastLeftDuration", 0) + elapsed
+            updates["breastLeftBeginDt"] = None
             
         self.patch_activity(track_id, updates)
         return True
 
-    def resume_pump(self, track_id, side=None):
+    def resume_pump(self, track_id):
         """
-        Resumes a paused pump timer, or switches sides dynamically.
+        Resumes a paused pump timer.
         """
         track = self.get_track(track_id)
         if not track:
             return False
             
         now = int(time.time() * 1000)
-        updates = {"updateDt": now}
+        updates = {
+            "updateDt": now,
+            "breastLeftBeginDt": now
+        }
         
-        # If we are resuming a finalized track, we must remove endDt!
-        if track.get("endDt"):
-            updates["endDt"] = None
-            
-        # Determine the current active side if we are already running
-        running_side = None
-        if track.get("pumpLeftBeginDt"):
-            running_side = "LEFT"
-        elif track.get("pumpRightBeginDt"):
-            running_side = "RIGHT"
-            
-        if running_side and running_side != side:
-            # They want to switch sides! 
-            if running_side == "LEFT":
-                elapsed = now - track["pumpLeftBeginDt"]
-                updates["pumpLeftDuration"] = track.get("pumpLeftDuration", 0) + elapsed
-                updates["pumpLeftBeginDt"] = None
-            else:
-                elapsed = now - track["pumpRightBeginDt"]
-                updates["pumpRightDuration"] = track.get("pumpRightDuration", 0) + elapsed
-                updates["pumpRightBeginDt"] = None
-        
-        if side == "LEFT":
-            updates["pumpLeftBeginDt"] = now
-        elif side == "RIGHT":
-            updates["pumpRightBeginDt"] = now
-            
         self.patch_activity(track_id, updates)
         return True
 
