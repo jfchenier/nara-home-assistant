@@ -47,14 +47,18 @@ class NaraDataUpdateCoordinator(DataUpdateCoordinator):
             self.raw_data[track_id] = track_data
             
         # Trigger an update to all entities
-        self.hass.add_job(self.async_set_updated_data, self.raw_data)
+        self.hass.add_job(self.async_set_updated_data, self.data)
 
     async def _async_update_data(self):
         """Fetch data from Nara API."""
         try:
             def fetch():
+                import logging
+                _LOGGER.warning("Fetching trends...")
                 trends = self.trends_helper.get_trends()
+                _LOGGER.warning("Fetching raw data...")
                 self.raw_data = self.api.get_data()
+                _LOGGER.warning("Fetch complete!")
                 return trends
                 
             return await self.hass.async_add_executor_job(fetch)

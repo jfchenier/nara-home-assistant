@@ -9,6 +9,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Nara switch platform."""
+    _LOGGER.warning("Setting up switch platform!")
     coordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [
         NaraSideSwitch(coordinator, "FEED", "LEFT", "mdi:baby-bottle-outline"),
@@ -17,6 +18,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         NaraActivitySwitch(coordinator, "SLEEP", "mdi:bed"),
     ]
     async_add_entities(entities)
+    _LOGGER.warning("Finished setting up switch platform!")
 
 
 class NaraActivitySwitch(CoordinatorEntity, SwitchEntity):
@@ -161,9 +163,9 @@ class NaraPumpSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def _active_track(self):
         for key, track in self.coordinator.raw_data.items():
-            if track.get("type") == "PUMP" and track.get("endDt") == track.get("beginDt"):
-                # A running pump track has endDt == beginDt and breastLeftBeginDt set
-                if track.get("breastLeftBeginDt"):
+            if track.get("type") == "PUMP" and not track.get("endDt"):
+                # A running pump track has no endDt
+                if track.get("breastLeftBeginDt") or track.get("breastRightBeginDt"):
                     track["key"] = key
                     return track
         return None
@@ -179,16 +181,18 @@ class NaraPumpSwitch(CoordinatorEntity, SwitchEntity):
         if track:
             await self.hass.async_add_executor_job(self.coordinator.api.resume_pump, track["key"])
             track["breastLeftBeginDt"] = now
+            track["breastRightBeginDt"] = now
         else:
             # Start new track
             track_id = await self.hass.async_add_executor_job(self.coordinator.api.start_pump)
             self.coordinator.raw_data[track_id] = {
                 "type": "PUMP",
                 "beginDt": now,
-                "endDt": now,
-                "breastBoth": False,
+                "breastBoth": True,
                 "breastLeftBeginDt": now,
+                "breastRightBeginDt": now,
                 "breastLeftDuration": 0,
+                "breastRightDuration": 0,
                 "key": track_id
             }
                 
@@ -199,8 +203,9 @@ class NaraPumpSwitch(CoordinatorEntity, SwitchEntity):
         if not track:
             return
             
-        await self.hass.async_add_executor_job(self.coordinator.api.pause_pump, track["key"])
+        await self.hass.async_add_executor_job(self.coordinator.api.stop_pump, track["key"])
         track["breastLeftBeginDt"] = None
+        track["breastRightBeginDt"] = None
+        track["endDt"] = int(time.time() * 1000)
                 
         self.async_write_ha_state()
-

@@ -67,7 +67,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     def _on_sse_event(activity):
-        _LOGGER.debug("Received SSE event: %s", activity)
+        _LOGGER.warning("Received SSE event: %s", activity)
         hass.loop.call_soon_threadsafe(
             lambda: hass.async_create_task(coordinator._handle_stream_event(activity))
         )

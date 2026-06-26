@@ -88,20 +88,22 @@ SENSOR_TYPES = {
     }
 }
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up Nara sensor platform."""
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-
-    sensors = []
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    _LOGGER.warning("Setting up sensor platform!")
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+    
+    entities = []
+    
     for window_key, window_name in WINDOWS.items():
         for sensor_id, sensor_info in SENSOR_TYPES.items():
-            sensors.append(NaraSensor(coordinator, window_key, window_name, sensor_id, sensor_info))
+            entities.append(NaraSensor(coordinator, window_key, window_name, sensor_id, sensor_info))
+            
+    entities.append(NaraTimeSinceSensor(coordinator, "FEED", "Last Feed", "mdi:baby-bottle"))
+    entities.append(NaraTimeSinceSensor(coordinator, "DIAPER", "Last Diaper", "mdi:baby-carriage"))
+    entities.append(NaraTimeSinceSensor(coordinator, "SLEEP", "Wake Window Start", "mdi:eye-outline"))
 
-    sensors.append(NaraTimeSinceSensor(coordinator, "FEED", "Last Feed", "mdi:baby-bottle"))
-    sensors.append(NaraTimeSinceSensor(coordinator, "DIAPER", "Last Diaper", "mdi:baby-carriage"))
-    sensors.append(NaraTimeSinceSensor(coordinator, "SLEEP", "Wake Window Start", "mdi:eye-outline"))
-
-    async_add_entities(sensors)
+    async_add_entities(entities)
+    _LOGGER.warning("Finished setting up sensor platform!")
 
 
 class NaraSensor(CoordinatorEntity, SensorEntity):

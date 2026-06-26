@@ -37,7 +37,7 @@ class NaraAPI:
             'email': self.email,
             'password': self.password,
             'returnSecureToken': True
-        })
+        }, timeout=15)
         
         if res.status_code != 200:
             raise Exception(f"Login failed: {res.text}")
@@ -47,7 +47,7 @@ class NaraAPI:
         self.uid = data['localId']
         
         # Fetch family key
-        fam_res = requests.get(f"{self.DB_URL}/userz/{self.uid}/familyKeyz.json?auth={self.id_token}")
+        fam_res = requests.get(f"{self.DB_URL}/userz/{self.uid}/familyKeyz.json?auth={self.id_token}", timeout=15)
         if fam_res.status_code == 200 and fam_res.json():
             families = list(fam_res.json().keys())
             if families:
@@ -69,6 +69,8 @@ class NaraAPI:
 
     def _do_request(self, method, url, **kwargs):
         import re
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 15
         res = requests.request(method, url, **kwargs)
         if res.status_code == 401:
             print("Token expired, re-authenticating...")
@@ -111,12 +113,12 @@ class NaraAPI:
         url = f"{self.DB_URL}/familyz/{self.family_key}/trackz.json?auth={self.id_token}"
         headers = {'Accept': 'text/event-stream'}
         
-        res = requests.get(url, headers=headers, stream=True)
+        res = requests.get(url, headers=headers, stream=True, timeout=(15, None))
         if res.status_code == 401:
             print("SSE Stream got 401, re-authenticating...")
             self.login()
             url = f"{self.DB_URL}/familyz/{self.family_key}/trackz.json?auth={self.id_token}"
-            res = requests.get(url, headers=headers, stream=True)
+            res = requests.get(url, headers=headers, stream=True, timeout=(15, None))
             
         if res.status_code != 200:
             raise Exception(f"Failed to connect to stream: {res.text}")
@@ -139,43 +141,32 @@ class NaraAPI:
                     payload = json.loads(data_str)
                     
                     if current_event in ["put", "patch"]:
+                        path_val = payload.get("path", "")
                         data_val = payload.get("data")
-                        path_val = payload.get("path")
                         
-                        if data_val is None and path_val == "/":
+                        if path_val == "/":
                             continue
                             
-                        # If it's the initial payload, the path is "/" and data is a dict of user keys -> tracks.
-                        if path_val == "/":
-                            if isinstance(data_val, dict):
-                                for user_key, tracks in data_val.items():
-                                    if isinstance(tracks, dict):
-                                        for track_id, track in tracks.items():
-                                            if isinstance(track, dict):
-                                                track["key"] = track_id
-                                                callback(track)
-                        elif path_val.startswith("/"):
-                            # Path is like "/<userKey>/<trackKey>" or deeper "/<userKey>/<trackKey>/breastLeftBeginDt"
-                            parts = path_val.strip("/").split("/")
+                        # Path is like "/<trackKey>" or deeper "/<trackKey>/breastLeftBeginDt"
+                        parts = path_val.strip("/").split("/")
+                        
+                        if len(parts) >= 1:
+                            track_id = parts[0]
                             
-                            if len(parts) >= 2:
-                                user_key = parts[0]
-                                track_id = parts[1]
-                                
-                                if len(parts) == 2:
-                                    # Full track update or partial patch at track root
-                                    if isinstance(data_val, dict):
-                                        data_val["key"] = track_id
-                                        if current_event == "put":
-                                            data_val["_replace"] = True
-                                        callback(data_val)
-                                    elif data_val is None:
-                                        # Track was deleted!
-                                        callback({"key": track_id, "_deleted": True})
-                                elif len(parts) == 3:
-                                    # Deep patch (e.g., {"breastLeftBeginDt": 12345})
-                                    field_name = parts[2]
-                                    callback({"key": track_id, field_name: data_val})
+                            if len(parts) == 1:
+                                # Full track update or partial patch at track root
+                                if isinstance(data_val, dict):
+                                    data_val["key"] = track_id
+                                    if current_event == "put":
+                                        data_val["_replace"] = True
+                                    callback(data_val)
+                                elif data_val is None:
+                                    # Track was deleted!
+                                    callback({"key": track_id, "_deleted": True})
+                            elif len(parts) == 2:
+                                # Deep patch (e.g., {"breastLeftBeginDt": 12345})
+                                field_name = parts[1]
+                                callback({"key": track_id, field_name: data_val})
                                 
                 except json.JSONDecodeError:
                     pass
@@ -501,12 +492,26 @@ class NaraAPI:
         Returns the track_id.
         """
         now = int(time.time() * 1000)
+        track_id = "-Ovk" + self._generate_id()[:16]
+        
         payload = {
+            "type": "PUMP",
             "breastLeftDuration": 0,
-            "breastBoth": False,
-            "breastLeftBeginDt": now
+            "breastRightDuration": 0,
+            "breastLeftBeginDt": now,
+            "breastRightBeginDt": now,
+            "breastBoth": True,
+            "isTimer": True,
+            "beginDt": now,
+            "updateDt": now,
+            "createDt": now,
+            "tz": self._get_local_timezone(),
+            "createUserKey": self.uid,
+            "userKey": self.uid,
+            "ord": -now
         }
-        return self.log_activity("PUMP", begin_dt=now, end_dt=now, **payload)
+        
+        return self._put_track(payload, track_id)
 
     def pause_pump(self, track_id):
         """
@@ -519,12 +524,18 @@ class NaraAPI:
         now = int(time.time() * 1000)
         updates = {"updateDt": now}
         
-        active = track.get("breastLeftBeginDt") is not None
+        left_active = track.get("breastLeftBeginDt") is not None
+        right_active = track.get("breastRightBeginDt") is not None
         
-        if active:
+        if left_active:
             elapsed = now - track["breastLeftBeginDt"]
             updates["breastLeftDuration"] = track.get("breastLeftDuration", 0) + elapsed
             updates["breastLeftBeginDt"] = None
+            
+        if right_active:
+            elapsed = now - track["breastRightBeginDt"]
+            updates["breastRightDuration"] = track.get("breastRightDuration", 0) + elapsed
+            updates["breastRightBeginDt"] = None
             
         self.patch_activity(track_id, updates)
         return True
@@ -540,7 +551,8 @@ class NaraAPI:
         now = int(time.time() * 1000)
         updates = {
             "updateDt": now,
-            "breastLeftBeginDt": now
+            "breastLeftBeginDt": now,
+            "breastRightBeginDt": now
         }
         
         self.patch_activity(track_id, updates)

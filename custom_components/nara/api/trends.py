@@ -47,15 +47,19 @@ class TrendsHelper:
         
         print("Fetching historical data from Nara Baby...")
         tracks = self.api.get_data()
+        print("Got tracks!")
         
         # Sort all tracks chronologically to easily calculate gaps
         sorted_tracks = sorted(tracks.values(), key=lambda t: t.get("beginDt", 0))
+        print("Sorted tracks!")
         
         results = {}
         for w_name, w_start in windows.items():
+            print(f"Calculating for window {w_name}")
             window_tracks = [t for t in sorted_tracks if t.get("beginDt", 0) >= w_start]
             results[w_name] = self._calculate_metrics(window_tracks)
             
+        print("Done calculating trends!")
         return results
         
     def _calculate_metrics(self, tracks):
