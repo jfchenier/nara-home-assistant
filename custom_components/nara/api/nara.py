@@ -355,6 +355,7 @@ class NaraAPI:
             "breastEndSide": side,
             "breastLeftDuration": 0,
             "breastRightDuration": 0,
+            "isTimer": True
         }
         if side == "LEFT":
             payload["breastLeftBeginDt"] = now
@@ -473,7 +474,8 @@ class NaraAPI:
         now = int(time.time() * 1000)
         payload = {
             "type": "SLEEP",
-            "endDt": None
+            "endDt": None,
+            "isTimer": True
         }
         return self.log_activity("SLEEP", begin_dt=now, **payload)
 
@@ -502,6 +504,7 @@ class NaraAPI:
             "endDt": now,
             "breastLeftDuration": 0,
             "breastRightDuration": 0,
+            "isTimer": True
         }
         if side == "LEFT":
             payload["breastLeftBeginDt"] = now
