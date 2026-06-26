@@ -178,6 +178,14 @@ class NaraAPI:
         """Generates a UUID without dashes, used for Firebase keys and sync groups."""
         return str(uuid.uuid4()).replace("-", "")
 
+    def _get_local_timezone(self):
+        """Get the local timezone as an IANA timezone string."""
+        try:
+            import tzlocal
+            return tzlocal.get_localzone_name()
+        except Exception:
+            return "UTC"
+
     def _push_payload(self, payload, track_id=None):
         """
         Pushes a raw JSON payload to the Nara Baby Firebase database.
