@@ -148,10 +148,20 @@ class NaraAPI:
                         # If it's the initial payload, the path is "/" and data is a dict of the matched items.
                         if path_val == "/":
                             if isinstance(data_val, dict):
+                                deep_updates = {}
                                 for key, track in data_val.items():
                                     if isinstance(track, dict):
                                         track["key"] = key
                                         callback(track)
+                                    elif "/" in key:
+                                        parts = key.split("/")
+                                        if len(parts) == 2:
+                                            t_id, f_name = parts[0], parts[1]
+                                            if t_id not in deep_updates:
+                                                deep_updates[t_id] = {"key": t_id}
+                                            deep_updates[t_id][f_name] = track
+                                for t_id, update in deep_updates.items():
+                                    callback(update)
                         elif path_val.startswith("/"):
                             # Path could be "/-OvkXYZ" or deeper like "/-OvkXYZ/breastLeftBeginDt"
                             parts = path_val.strip("/").split("/")
@@ -355,6 +365,7 @@ class NaraAPI:
             "breastEndSide": side,
             "breastLeftDuration": 0,
             "breastRightDuration": 0,
+            "isTimer": True
         }
         if side == "LEFT":
             payload["breastLeftBeginDt"] = now
@@ -499,6 +510,7 @@ class NaraAPI:
         payload = {
             "pumpLeftDuration": 0,
             "pumpRightDuration": 0,
+            "isTimer": True
         }
         if side == "LEFT":
             payload["pumpLeftBeginDt"] = now
