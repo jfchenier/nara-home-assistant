@@ -171,6 +171,8 @@ class NaraAPI:
                                 # Full track update or partial patch at track root
                                 if isinstance(data_val, dict):
                                     data_val["key"] = track_id
+                                    if current_event == "put":
+                                        data_val["_replace"] = True
                                     callback(data_val)
                                 elif data_val is None:
                                     # Track was deleted!

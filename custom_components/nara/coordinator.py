@@ -35,6 +35,9 @@ class NaraDataUpdateCoordinator(DataUpdateCoordinator):
         if track_data.get("_deleted"):
             if track_id in self.raw_data:
                 del self.raw_data[track_id]
+        elif track_data.get("_replace"):
+            track_data.pop("_replace", None)
+            self.raw_data[track_id] = track_data
         elif track_id in self.raw_data:
             self.raw_data[track_id].update(track_data)
         else:
