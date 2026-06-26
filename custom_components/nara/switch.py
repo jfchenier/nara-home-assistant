@@ -103,10 +103,16 @@ class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
             return False
         
         # It's ON if this specific side is actively running
-        if self.side == "LEFT":
-            return track.get("breastLeftBeginDt") is not None
-        else:
-            return track.get("breastRightBeginDt") is not None
+        if self.activity_type == "FEED":
+            if self.side == "LEFT":
+                return bool(track.get("breastLeftBeginDt"))
+            else:
+                return bool(track.get("breastRightBeginDt"))
+        elif self.activity_type == "PUMP":
+            if self.side == "LEFT":
+                return bool(track.get("pumpLeftBeginDt"))
+            else:
+                return bool(track.get("pumpRightBeginDt"))
 
     async def async_turn_on(self, **kwargs):
         track = self._active_track
