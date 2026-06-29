@@ -12,6 +12,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     entities = [
         NaraFinishButton(coordinator, "FEED", "mdi:check-circle-outline"),
+        NaraLogDiaperButton(coordinator, "Nara Diaper Wet", pee=True, poop=False, dry=False),
+        NaraLogDiaperButton(coordinator, "Nara Diaper Dirty", pee=False, poop=True, dry=False),
+        NaraLogDiaperButton(coordinator, "Nara Diaper Mixed", pee=True, poop=True, dry=False),
+        NaraLogDiaperButton(coordinator, "Nara Diaper Dry", pee=False, poop=False, dry=True),
     ]
     async_add_entities(entities)
 
@@ -58,3 +62,35 @@ class NaraFinishButton(CoordinatorEntity, ButtonEntity):
         # Optimistic update
         track["endDt"] = now
         self.async_write_ha_state()
+
+class NaraLogDiaperButton(CoordinatorEntity, ButtonEntity):
+    """Button to log a specific type of diaper."""
+
+    def __init__(self, coordinator, name, pee, poop, dry):
+        super().__init__(coordinator)
+        self.coordinator = coordinator
+        self.pee = pee
+        self.poop = poop
+        self.dry = dry
+        email = coordinator.api.email.lower()
+        
+        self._attr_name = name
+        
+        safe_name = name.lower().replace(" ", "_")
+        self._attr_unique_id = f"nara_{email}_{safe_name}_button"
+        
+        if poop:
+            self._attr_icon = "mdi:emoticon-poop"
+        elif dry:
+            self._attr_icon = "mdi:water-off"
+        else:
+            self._attr_icon = "mdi:water"
+
+    async def async_press(self) -> None:
+        """Handle the button press."""
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.log_diaper,
+            self.pee,
+            self.poop,
+            self.dry
+        )
