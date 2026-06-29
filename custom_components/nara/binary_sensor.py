@@ -33,10 +33,17 @@ class NaraActiveBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def _active_track(self):
-        """Find the active track of this type. A track is active if it has no endDt."""
-        for track in self.coordinator.raw_data.values():
-            if track.get("type") == self.activity_type and track.get("isTimer") and track.get("endDt") is None:
-                return track
+        """Find the active track of this type."""
+        for key, track in self.coordinator.raw_data.items():
+            if track.get("type") == self.activity_type and not track.get("endDt"):
+                if self.activity_type in ["FEED", "PUMP"]:
+                    if track.get("breastLeftBeginDt") or track.get("breastRightBeginDt"):
+                        track["key"] = key
+                        return track
+                elif self.activity_type == "SLEEP":
+                    if track.get("beginDt"):
+                        track["key"] = key
+                        return track
         return None
 
     @property

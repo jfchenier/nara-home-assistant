@@ -3,6 +3,9 @@ import json
 import os
 import time
 import uuid
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 class NaraAPI:
     API_KEY = "AIzaSyApsJ5h5-JCjp9SJvWbHG4Fxq8NbxDW0EQ"
@@ -104,72 +107,145 @@ class NaraAPI:
         Connects to the Firebase Realtime Database SSE stream and listens for new activities in real-time.
         This blocks the current thread indefinitely.
         
-        Args:
-            callback (function): A function that takes a dictionary representing the new/updated activity.
+        It listens to two streams:
+        1. trackz.json (for persistent track updates and historical syncing)
+        2. instreamz (for live mobile app timer toggles which bypass trackz until saved)
         """
-        # We use orderBy="updateDt" & startAt=<now> so we only receive new events
-        # from the moment the stream connects, bypassing the entire historical dataset.
-        now_ms = int(time.time() * 1000)
-        url = f"{self.DB_URL}/familyz/{self.family_key}/trackz.json?auth={self.id_token}"
-        headers = {'Accept': 'text/event-stream'}
+        import threading
         
-        res = requests.get(url, headers=headers, stream=True, timeout=(15, None))
-        if res.status_code == 401:
-            print("SSE Stream got 401, re-authenticating...")
-            self.login()
-            url = f"{self.DB_URL}/familyz/{self.family_key}/trackz.json?auth={self.id_token}"
-            res = requests.get(url, headers=headers, stream=True, timeout=(15, None))
-            
-        if res.status_code != 200:
-            raise Exception(f"Failed to connect to stream: {res.text}")
-            
-        current_event = None
-        for line in res.iter_lines(chunk_size=1):
-            if not line:
-                continue
+        def _listen_url(url, is_instreamz=False):
+            res = requests.get(url, headers={'Accept': 'text/event-stream'}, stream=True, timeout=(15, None))
+            if res.status_code == 401:
+                _LOGGER.warning(f"SSE Stream {url} got 401, re-authenticating...")
+                self.login()
+                url = url.replace(url.split("auth=")[1], self.id_token)
+                res = requests.get(url, headers={'Accept': 'text/event-stream'}, stream=True, timeout=(15, None))
                 
-            decoded_line = line.decode('utf-8')
+            if res.status_code != 200:
+                _LOGGER.warning(f"Failed to connect to stream {url}: {res.status_code}")
+                return
+
+            _LOGGER.warning(f"SSE: Connected to {'instreamz' if is_instreamz else 'trackz'}, processing stream...")
+            current_event = None
             
-            if decoded_line.startswith("event: "):
-                current_event = decoded_line.replace("event: ", "")
-            elif decoded_line.startswith("data: "):
-                data_str = decoded_line.replace("data: ", "")
-                if data_str == "null":
+            for line in res.iter_lines(chunk_size=1):
+                if not line:
                     continue
                     
-                try:
-                    payload = json.loads(data_str)
-                    
-                    if current_event in ["put", "patch"]:
-                        path_val = payload.get("path", "")
-                        data_val = payload.get("data")
+                decoded_line = line.decode('utf-8')
+                
+                if decoded_line.startswith("event: "):
+                    current_event = decoded_line.replace("event: ", "")
+                elif decoded_line.startswith("data: "):
+                    data_str = decoded_line.replace("data: ", "")
+                    if data_str == "null":
+                        continue
                         
+                    try:
+                        data = json.loads(data_str)
+                        path_val = data.get("path", "")
+                        data_val = data.get("data")
+                        
+                        _LOGGER.warning(f"SSE [{url.split('/')[-1]}]: path={path_val} data={str(data_val)[:200]}")
+                        
+                        # Root dump contains all users and all tracks. Skip it because get_data() already loaded state.
                         if path_val == "/":
+                            if is_instreamz and isinstance(data_val, dict):
+                                # instreamz payload: /sync_group/value/track_id -> data
+                                for sync_group, sync_data in data_val.items():
+                                    if isinstance(sync_data, dict) and "value" in sync_data:
+                                        for track_id, track_data in sync_data["value"].items():
+                                            if isinstance(track_data, dict) and "type" in track_data:
+                                                track_data["key"] = track_id
+                                                callback(track_data)
                             continue
-                            
-                        # Path is like "/<trackKey>" or deeper "/<trackKey>/breastLeftBeginDt"
+
                         parts = path_val.strip("/").split("/")
                         
-                        if len(parts) >= 1:
-                            track_id = parts[0]
-                            
-                            if len(parts) == 1:
-                                # Full track update or partial patch at track root
-                                if isinstance(data_val, dict):
-                                    data_val["key"] = track_id
-                                    if current_event == "put":
-                                        data_val["_replace"] = True
-                                    callback(data_val)
-                                elif data_val is None:
-                                    # Track was deleted!
-                                    callback({"key": track_id, "_deleted": True})
-                            elif len(parts) == 2:
-                                # Deep patch (e.g., {"breastLeftBeginDt": 12345})
-                                field_name = parts[1]
-                                callback({"key": track_id, field_name: data_val})
+                        if is_instreamz:
+                            if not parts[0]:
+                                continue
                                 
-                except json.JSONDecodeError:
-                    pass
+                            # Check if it's the old sync_group/value/track_id structure
+                            if len(parts) >= 3 and parts[1] == "value":
+                                track_id = parts[2]
+                                if len(parts) == 3:
+                                    if isinstance(data_val, dict) and "type" in data_val:
+                                        data_val["key"] = track_id
+                                        callback(data_val)
+                                elif len(parts) == 4:
+                                    field_name = parts[3]
+                                    callback({"key": track_id, field_name: data_val})
+                            else:
+                                # New direct track_id structure sent by mobile app
+                                track_id = parts[0]
+                                if len(parts) == 1:
+                                    if isinstance(data_val, dict):
+                                        if "value" in data_val:
+                                            # It's a sync_group containing tracks!
+                                            for track_id, track_data in data_val["value"].items():
+                                                if isinstance(track_data, dict) and "type" in track_data:
+                                                    track_data["key"] = track_id
+                                                    callback(track_data)
+                                        elif "type" in data_val:
+                                            # It's a direct track_id structure
+                                            data_val["key"] = track_id
+                                            callback(data_val)
+                                    elif data_val is None:
+                                        # If it's just the sync_group being deleted, or a direct track being deleted
+                                        # But if it's a sync_group being deleted, parts[0] is sync_group, not track_id.
+                                        # It's safer to just ignore None at length 1 unless we know it's a track_id. 
+                                        # We'll just pass here.
+                                        pass
+                                elif len(parts) == 2:
+                                    field_name = parts[1]
+                                    callback({"key": track_id, field_name: data_val})
+                        else:
+                            # Path is like "/<userKey>/<trackKey>" or deeper
+                            if len(parts) == 1:
+                                # A user was added or replaced. data_val is a dict of tracks.
+                                if isinstance(data_val, dict):
+                                    for track_id, track_data in data_val.items():
+                                        if isinstance(track_data, dict):
+                                            track_data["key"] = track_id
+                                            callback(track_data)
+                            elif len(parts) >= 2:
+                                user_key = parts[0]
+                                track_id = parts[1]
+                                
+                                if len(parts) == 2:
+                                    # Full track update or partial patch at track root
+                                    if isinstance(data_val, dict):
+                                        data_val["key"] = track_id
+                                        if current_event == "put":
+                                            data_val["_replace"] = True
+                                        callback(data_val)
+                                    elif data_val is None:
+                                        # Track was deleted!
+                                        callback({"key": track_id, "_deleted": True})
+                                elif len(parts) == 3:
+                                    # Deep patch
+                                    field_name = parts[2]
+                                    callback({"key": track_id, field_name: data_val})
+                                    
+                    except json.JSONDecodeError:
+                        pass
+        
+        now_ms = int(time.time() * 1000)
+        url_trackz = f"{self.DB_URL}/familyz/{self.family_key}/trackz.json?auth={self.id_token}"
+        url_instreamz = f"{self.DB_URL}/instreamz/familyz/{self.family_key}/trackz/{self.uid}.json?auth={self.id_token}"
+        
+        t1 = threading.Thread(target=_listen_url, args=(url_trackz, False))
+        t2 = threading.Thread(target=_listen_url, args=(url_instreamz, True))
+        
+        t1.daemon = True
+        t2.daemon = True
+        
+        t1.start()
+        t2.start()
+        
+        while True:
+            time.sleep(1)
 
     def _generate_id(self):
         """Generates a UUID without dashes, used for Firebase keys and sync groups."""
@@ -207,7 +283,7 @@ class NaraAPI:
         payload["familyKey"] = self.family_key
         
         # 1. Write the persistent data to Realtime DB (failsafe)
-        path_trackz = f"/familyz/{self.family_key}/trackz/{track_id}.json"
+        path_trackz = f"/familyz/{self.family_key}/trackz/{self.uid}/{track_id}.json"
         self._do_request("PUT", f"{self.DB_URL}{path_trackz}?auth={self.id_token}", json=payload)
             
         # 2. Write to instreamz to trigger real-time app sync via cloud functions
@@ -221,7 +297,7 @@ class NaraAPI:
         """
         Fetches a specific track from Firebase.
         """
-        path = f"/familyz/{self.family_key}/trackz/{track_id}.json"
+        path = f"/familyz/{self.family_key}/trackz/{self.uid}/{track_id}.json"
         res = self._do_request("GET", f"{self.DB_URL}{path}?auth={self.id_token}")
         if res.status_code == 200:
             track = res.json()
@@ -230,27 +306,35 @@ class NaraAPI:
             return track
         return None
 
-    def patch_activity(self, track_id, updates):
+    def patch_activity(self, track_id, updates, full_track=None):
         """
         Applies a partial update to an existing track in Realtime DB,
         then pushes the full updated track to the instreamz sync queue.
         """
-        path_trackz = f"/familyz/{self.family_key}/trackz/{track_id}.json"
+        if not full_track:
+            full_track = self.get_track(track_id) or {}
+            
+        # Use the track's owner if available to avoid duplicating across users
+        track_owner = full_track.get("userKey", self.uid)
+        path_trackz = f"/familyz/{self.family_key}/trackz/{track_owner}/{track_id}.json"
         
         # We MUST send None values to PATCH so Firebase deletes those fields
         self._do_request("PATCH", f"{self.DB_URL}{path_trackz}?auth={self.id_token}", json=updates)
         
-        # We need to write to instreamz to trigger the cloud functions too.
-        # instreamz expects the FULL object to be pushed, not just the patch!
-        # Fetch the complete updated track and push to instreamz
-        full_track = self.get_track(track_id)
+        # Apply updates in-memory so instreamz gets the final object
+        for k, v in updates.items():
+            if v is None:
+                full_track.pop(k, None)
+            else:
+                full_track[k] = v
+        
         if full_track:
             # We don't want None fields in the fetched track, but Firebase already removes them.
             # Just to be extremely safe, we strip them.
             clean_track = {k: v for k, v in full_track.items() if v is not None}
             
             sync_group = self._generate_id()
-            path_instreamz = f"/instreamz/familyz/{self.family_key}/trackz/{self.uid}/{sync_group}/value/{track_id}.json"
+            path_instreamz = f"/instreamz/familyz/{self.family_key}/trackz/{track_owner}/{sync_group}/value/{track_id}.json"
             self._do_request("PUT", f"{self.DB_URL}{path_instreamz}?auth={self.id_token}", json=clean_track)
             
         return track_id
@@ -352,7 +436,7 @@ class NaraAPI:
             "breastEndSide": side,
             "breastLeftDuration": 0,
             "breastRightDuration": 0,
-            "isTimer": True
+
         }
         if side == "LEFT":
             payload["breastLeftBeginDt"] = now
@@ -361,12 +445,18 @@ class NaraAPI:
             
         return self.log_activity("FEED", begin_dt=now, **payload)
 
-    def pause_breast_feed(self, track_id, side=None):
+    def pause_breast_feed(self, track_id_or_dict, side=None):
         """
         Pauses an active breast feed timer for a specific side.
         If no sides remain active after pausing, the feed is finalized (stopped).
         """
-        track = self.get_track(track_id)
+        if isinstance(track_id_or_dict, dict):
+            track = track_id_or_dict.copy()
+            track_id = track.get("key")
+        else:
+            track_id = track_id_or_dict
+            track = self.get_track(track_id)
+            
         if not track:
             return False
             
@@ -375,6 +465,8 @@ class NaraAPI:
         
         left_active = track.get("breastLeftBeginDt") is not None
         right_active = track.get("breastRightBeginDt") is not None
+        
+        _LOGGER.warning(f"left_active={left_active}, right_active={right_active}")
         
         if (side == "LEFT" or side is None) and left_active:
             elapsed = now - track["breastLeftBeginDt"]
@@ -392,14 +484,20 @@ class NaraAPI:
         if not left_active and not right_active:
             updates["endDt"] = now
             
-        self.patch_activity(track_id, updates)
+        self.patch_activity(track_id, updates, full_track=track)
         return True
 
-    def resume_breast_feed(self, track_id, side=None):
+    def resume_breast_feed(self, track_id_or_dict, side=None):
         """
         Resumes a paused breast feed timer, or switches sides dynamically.
         """
-        track = self.get_track(track_id)
+        if isinstance(track_id_or_dict, dict):
+            track = track_id_or_dict.copy()
+            track_id = track.get("key")
+        else:
+            track_id = track_id_or_dict
+            track = self.get_track(track_id)
+            
         if not track:
             return False
             
@@ -429,14 +527,20 @@ class NaraAPI:
         updates[f"breast{target_side.capitalize()}BeginDt"] = now
         updates["breastEndSide"] = target_side
         
-        self.patch_activity(track_id, updates)
+        self.patch_activity(track_id, updates, full_track=track)
         return True
 
-    def stop_breast_feed(self, track_id):
+    def stop_breast_feed(self, track_id_or_dict):
         """
         Stops the active feed timer, finalizes durations, and removes the timer state.
         """
-        track = self.get_track(track_id)
+        if isinstance(track_id_or_dict, dict):
+            track = track_id_or_dict.copy()
+            track_id = track.get("key")
+        else:
+            track_id = track_id_or_dict
+            track = self.get_track(track_id)
+            
         if not track:
             return False
             
@@ -460,7 +564,7 @@ class NaraAPI:
             updates["breastRightDuration"] = track.get("breastRightDuration", 0) + elapsed
             updates["breastEndSide"] = "RIGHT"
                 
-        self.patch_activity(track_id, updates)
+        self.patch_activity(track_id, updates, full_track=track)
         return True
 
     def start_sleep(self):
@@ -472,20 +576,30 @@ class NaraAPI:
         payload = {
             "type": "SLEEP",
             "endDt": None,
-            "isTimer": True
+
         }
         return self.log_activity("SLEEP", begin_dt=now, **payload)
 
-    def stop_sleep(self, track_id):
+    def stop_sleep(self, track_id_or_dict):
         """
         Stops an active sleep timer.
         """
+        if isinstance(track_id_or_dict, dict):
+            track = track_id_or_dict.copy()
+            track_id = track.get("key")
+        else:
+            track_id = track_id_or_dict
+            track = self.get_track(track_id)
+            
+        if not track:
+            return False
+            
         now = int(time.time() * 1000)
         updates = {
             "endDt": now,
             "updateDt": now
         }
-        self.patch_activity(track_id, updates)
+        self.patch_activity(track_id, updates, full_track=track)
         return True
     def start_pump(self):
         """
@@ -502,7 +616,6 @@ class NaraAPI:
             "breastLeftBeginDt": now,
             "breastRightBeginDt": now,
             "breastBoth": True,
-            "isTimer": True,
             "beginDt": now,
             "updateDt": now,
             "createDt": now,
@@ -512,13 +625,19 @@ class NaraAPI:
             "ord": -now
         }
         
-        return self._put_track(payload, track_id)
+        return self._push_payload(payload, track_id)
 
-    def pause_pump(self, track_id):
+    def pause_pump(self, track_id_or_dict):
         """
         Pauses an active pump timer.
         """
-        track = self.get_track(track_id)
+        if isinstance(track_id_or_dict, dict):
+            track = track_id_or_dict.copy()
+            track_id = track.get("key")
+        else:
+            track_id = track_id_or_dict
+            track = self.get_track(track_id)
+            
         if not track:
             return False
             
@@ -538,14 +657,20 @@ class NaraAPI:
             updates["breastRightDuration"] = track.get("breastRightDuration", 0) + elapsed
             updates["breastRightBeginDt"] = None
             
-        self.patch_activity(track_id, updates)
+        self.patch_activity(track_id, updates, full_track=track)
         return True
 
-    def resume_pump(self, track_id):
+    def resume_pump(self, track_id_or_dict):
         """
         Resumes a paused pump timer.
         """
-        track = self.get_track(track_id)
+        if isinstance(track_id_or_dict, dict):
+            track = track_id_or_dict.copy()
+            track_id = track.get("key")
+        else:
+            track_id = track_id_or_dict
+            track = self.get_track(track_id)
+            
         if not track:
             return False
             
@@ -556,14 +681,20 @@ class NaraAPI:
             "breastRightBeginDt": now
         }
         
-        self.patch_activity(track_id, updates)
+        self.patch_activity(track_id, updates, full_track=track)
         return True
 
-    def stop_pump(self, track_id, left_vol_floz=0, right_vol_floz=0):
+    def stop_pump(self, track_id_or_dict, left_vol_floz=0, right_vol_floz=0):
         """
         Stops the active pump timer and logs the final volume.
         """
-        track = self.get_track(track_id)
+        if isinstance(track_id_or_dict, dict):
+            track = track_id_or_dict.copy()
+            track_id = track.get("key")
+        else:
+            track_id = track_id_or_dict
+            track = self.get_track(track_id)
+            
         if not track:
             return False
             

@@ -35,7 +35,7 @@ class NaraActivitySwitch(CoordinatorEntity, SwitchEntity):
     @property
     def _active_track(self):
         for key, track in self.coordinator.raw_data.items():
-            if track.get("type") == self.activity_type and track.get("isTimer") and track.get("endDt") is None:
+            if track.get("type") == self.activity_type and track.get("endDt") is None:
                 track["key"] = key
                 return track
         return None
@@ -48,22 +48,13 @@ class NaraActivitySwitch(CoordinatorEntity, SwitchEntity):
         if self.activity_type == "SLEEP":
             now = int(time.time() * 1000)
             track_id = await self.hass.async_add_executor_job(self.coordinator.api.start_sleep)
-            # Optimistic update
-            self.coordinator.raw_data[track_id] = {
-                "type": "SLEEP",
-                "beginDt": now,
-                "isTimer": True,
-                "key": track_id
-            }
             self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
         track = self._active_track
         if track and self.activity_type == "SLEEP":
             now = int(time.time() * 1000)
-            await self.hass.async_add_executor_job(self.coordinator.api.stop_sleep, track["key"])
-            # Optimistic update
-            track["endDt"] = now
+            await self.hass.async_add_executor_job(self.coordinator.api.stop_sleep, track)
             self.async_write_ha_state()
 
 
@@ -82,15 +73,11 @@ class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def _active_track(self):
         for key, track in self.coordinator.raw_data.items():
-            if track.get("type") == self.activity_type and track.get("isTimer") and track.get("endDt") is None:
-                # If it's a ghost track (both sides paused, but no endDt), ignore it!
-                if self.activity_type == "FEED":
-                    left = track.get("breastLeftBeginDt")
-                    right = track.get("breastRightBeginDt")
-                    if not left and not right:
-                        continue
-                track["key"] = key
-                return track
+            if track.get("type") == self.activity_type and not track.get("endDt"):
+                if self.activity_type in ["FEED", "PUMP"]:
+                    if track.get("breastLeftBeginDt") or track.get("breastRightBeginDt"):
+                        track["key"] = key
+                        return track
         return None
 
     @property
@@ -112,42 +99,26 @@ class NaraSideSwitch(CoordinatorEntity, SwitchEntity):
         
         if track:
             if self.activity_type == "FEED":
-                await self.hass.async_add_executor_job(self.coordinator.api.resume_breast_feed, track["key"], self.side)
-                # Optimistic update
-                if self.side == "LEFT":
-                    track["breastLeftBeginDt"] = now
-                else:
-                    track["breastRightBeginDt"] = now
+                await self.hass.async_add_executor_job(self.coordinator.api.resume_breast_feed, track, self.side)
+                pass
         else:
             # Start new track
             if self.activity_type == "FEED":
                 track_id = await self.hass.async_add_executor_job(self.coordinator.api.start_breast_feed, self.side)
-                # Optimistic update
-                self.coordinator.raw_data[track_id] = {
-                    "type": "FEED",
-                    "feedType": "BREAST",
-                    "breastBeginSide": self.side,
-                    "breastEndSide": self.side,
-                    "breastLeftBeginDt": now if self.side == "LEFT" else None,
-                    "breastRightBeginDt": now if self.side == "RIGHT" else None,
-                    "isTimer": True,
-                    "key": track_id
-                }
+                pass
                 
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
         track = self._active_track
+        _LOGGER.warning(f"async_turn_off called for {self.side}. _active_track is: {track}")
         if not track:
             return
             
         if self.activity_type == "FEED":
-            await self.hass.async_add_executor_job(self.coordinator.api.pause_breast_feed, track["key"], self.side)
-            # Optimistic update
-            if self.side == "LEFT":
-                track["breastLeftBeginDt"] = None
-            else:
-                track["breastRightBeginDt"] = None
+            _LOGGER.warning(f"Calling pause_breast_feed for track {track['key']} side {self.side}")
+            res = await self.hass.async_add_executor_job(self.coordinator.api.pause_breast_feed, track, self.side)
+            _LOGGER.warning(f"pause_breast_feed returned: {res}")
                 
         self.async_write_ha_state()
 
@@ -165,8 +136,7 @@ class NaraPumpSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def _active_track(self):
         for key, track in self.coordinator.raw_data.items():
-            if track.get("type") == "PUMP" and track.get("isTimer") and not track.get("endDt"):
-                # A running pump track has no endDt
+            if track.get("type") == "PUMP" and not track.get("endDt"):
                 if track.get("breastLeftBeginDt") or track.get("breastRightBeginDt"):
                     track["key"] = key
                     return track
@@ -181,23 +151,12 @@ class NaraPumpSwitch(CoordinatorEntity, SwitchEntity):
         now = int(time.time() * 1000)
         
         if track:
-            await self.hass.async_add_executor_job(self.coordinator.api.resume_pump, track["key"])
-            track["breastLeftBeginDt"] = now
-            track["breastRightBeginDt"] = now
+            await self.hass.async_add_executor_job(self.coordinator.api.resume_pump, track)
+            pass
         else:
             # Start new track
             track_id = await self.hass.async_add_executor_job(self.coordinator.api.start_pump)
-            self.coordinator.raw_data[track_id] = {
-                "type": "PUMP",
-                "beginDt": now,
-                "breastBoth": True,
-                "breastLeftBeginDt": now,
-                "breastRightBeginDt": now,
-                "breastLeftDuration": 0,
-                "breastRightDuration": 0,
-                "isTimer": True,
-                "key": track_id
-            }
+            pass
                 
         self.async_write_ha_state()
 
@@ -206,9 +165,7 @@ class NaraPumpSwitch(CoordinatorEntity, SwitchEntity):
         if not track:
             return
             
-        await self.hass.async_add_executor_job(self.coordinator.api.stop_pump, track["key"])
-        track["breastLeftBeginDt"] = None
-        track["breastRightBeginDt"] = None
-        track["endDt"] = int(time.time() * 1000)
+        await self.hass.async_add_executor_job(self.coordinator.api.stop_pump, track)
+        pass
                 
         self.async_write_ha_state()

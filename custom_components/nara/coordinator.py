@@ -35,7 +35,7 @@ class NaraDataUpdateCoordinator(DataUpdateCoordinator):
         if track_data.get("_deleted"):
             if track_id in self.raw_data:
                 del self.raw_data[track_id]
-        elif track_data.get("_replace"):
+        elif track_data.get("_replace") or "type" in track_data:
             track_data.pop("_replace", None)
             self.raw_data[track_id] = track_data
         elif track_id in self.raw_data:
@@ -47,7 +47,7 @@ class NaraDataUpdateCoordinator(DataUpdateCoordinator):
             self.raw_data[track_id] = track_data
             
         # Trigger an update to all entities
-        self.hass.add_job(self.async_set_updated_data, self.data)
+        _LOGGER.warning(f"Raw data after stream event: {self.raw_data}"); self.data = dict(self.data) if self.data else {}; self.async_set_updated_data(self.data)
 
     async def _async_update_data(self):
         """Fetch data from Nara API."""

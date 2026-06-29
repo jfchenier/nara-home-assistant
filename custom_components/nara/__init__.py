@@ -23,11 +23,12 @@ class SSEListener(threading.Thread):
         self.callback = callback
 
     def run(self):
-        _LOGGER.debug("Starting Nara SSE stream listener...")
+        _LOGGER.warning("Starting Nara SSE stream listener...")
         try:
             self.api.stream_activities(self.callback)
         except Exception as e:
-            _LOGGER.error("Nara SSE stream disconnected: %s", e)
+            import traceback
+            _LOGGER.error("Nara SSE stream disconnected: %s\n%s", e, traceback.format_exc())
 
 class Debouncer:
     """Debounces rapidly firing events."""
